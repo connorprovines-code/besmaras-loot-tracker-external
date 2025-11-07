@@ -223,6 +223,18 @@ const CampaignSelector = ({ user, onSelectCampaign, onLogout }) => {
             ))
           )}
         </div>
+
+        {/* Footer */}
+        <div className="mt-8 text-center text-sm text-slate-400">
+          <a
+            href="https://d20-loot-tracker-341d4258.base44.app/privacypolicy"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-cyan-400 transition-colors"
+          >
+            Privacy Policy
+          </a>
+        </div>
       </div>
 
       {/* Create Campaign Modal */}
