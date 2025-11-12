@@ -112,20 +112,18 @@ const CampaignSelector = ({ user, onSelectCampaign, onLogout }) => {
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-900 p-6">
       <div className="max-w-4xl mx-auto">
         {/* Header */}
-        <div className="bg-gradient-to-r from-cyan-600 to-blue-600 rounded-lg p-6 mb-6 shadow-2xl">
-          <div className="flex justify-between items-center">
-            <div>
-              <h1 className="text-4xl font-bold mb-2">Your Campaigns</h1>
-              <p className="text-cyan-100">Logged in as {user.email}</p>
-            </div>
-            <button
-              onClick={onLogout}
-              className="bg-red-600 hover:bg-red-700 px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
-            >
-              <LogOut size={18} />
-              Logout
-            </button>
+        <div className="mb-6 flex justify-between items-center">
+          <div>
+            <h1 className="text-3xl font-bold mb-1">Your Campaigns</h1>
+            <p className="text-sm text-slate-400">Logged in as {user.email}</p>
           </div>
+          <button
+            onClick={onLogout}
+            className="bg-slate-800 hover:bg-slate-700 border border-slate-600 px-4 py-2 rounded-lg flex items-center gap-2 transition-all hover:border-red-500 text-slate-300 hover:text-red-400"
+          >
+            <LogOut size={16} />
+            <span className="hidden sm:inline">Logout</span>
+          </button>
         </div>
 
         {/* Create Campaign Button */}

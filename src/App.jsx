@@ -31,6 +31,8 @@ const App = ({ user, campaign, onBackToCampaigns, onLogout }) => {
   const [bulkImportText, setBulkImportText] = useState('');
   const [parsedBulkItems, setParsedBulkItems] = useState([]);
   const [editingGold, setEditingGold] = useState(null);
+  const [editingItemNotes, setEditingItemNotes] = useState(null);
+  const [editingNotes, setEditingNotes] = useState('');
 
   // REAL-TIME CONFIGURATION
   // Set to false to disable real-time features (kill switch)
@@ -569,19 +571,19 @@ const App = ({ user, campaign, onBackToCampaigns, onLogout }) => {
 
   const handleUseCharge = async (player, item, delta) => {
     const newCharges = Math.max(0, item.charges + delta);
-    
+
     if (newCharges === 0) {
       // Remove from inventory, mark as depleted
       await supabase
         .from('items')
         .update({ status: 'depleted', charges: 0 })
         .eq('id', item.id);
-      
+
       setInventories(prev => ({
         ...prev,
         [player]: prev[player].filter(i => i.id !== item.id)
       }));
-      
+
       setMasterLog(prev => prev.map(i => i.id === item.id ? { ...i, status: 'depleted', charges: 0 } : i));
       await addTransaction('depleted', `${item.name} depleted (${player})`, 0, player);
     } else {
@@ -590,13 +592,42 @@ const App = ({ user, campaign, onBackToCampaigns, onLogout }) => {
         .from('items')
         .update({ charges: newCharges })
         .eq('id', item.id);
-      
+
       setInventories(prev => ({
         ...prev,
         [player]: prev[player].map(i => i.id === item.id ? { ...i, charges: newCharges } : i)
       }));
-      
+
       setMasterLog(prev => prev.map(i => i.id === item.id ? { ...i, charges: newCharges } : i));
+    }
+  };
+
+  const handleEditNotes = async (item, newNotes) => {
+    try {
+      await supabase
+        .from('items')
+        .update({ notes: newNotes })
+        .eq('id', item.id);
+
+      // Update inventories
+      setInventories(prev => {
+        const newInventories = { ...prev };
+        Object.keys(newInventories).forEach(key => {
+          newInventories[key] = newInventories[key].map(i =>
+            i.id === item.id ? { ...i, notes: newNotes } : i
+          );
+        });
+        return newInventories;
+      });
+
+      // Update master log
+      setMasterLog(prev => prev.map(i => i.id === item.id ? { ...i, notes: newNotes } : i));
+
+      setEditingItemNotes(null);
+      setEditingNotes('');
+    } catch (error) {
+      console.error('Error updating notes:', error);
+      alert('Error updating notes');
     }
   };
 
@@ -889,28 +920,26 @@ const handleGoldEdit = async (entity, newValue) => {
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-900 text-white p-3 sm:p-6">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
-        <div className="bg-gradient-to-r from-cyan-600 to-blue-600 rounded-lg p-4 sm:p-6 mb-4 sm:mb-6 shadow-2xl">
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-            <div>
-              <h1 className="text-2xl md:text-4xl font-bold mb-2">{campaign.name}</h1>
-              <p className="text-sm md:text-base text-cyan-100">D20 TTRPG - Gold Distribution & Inventory</p>
-            </div>
-            <div className="flex gap-2">
-              <button
-                onClick={onBackToCampaigns}
-                className="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
-              >
-                <ArrowLeft size={18} />
-                Campaigns
-              </button>
-              <button
-                onClick={onLogout}
-                className="bg-red-600 hover:bg-red-700 px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
-              >
-                <LogOut size={18} />
-                Logout
-              </button>
-            </div>
+        <div className="mb-4 sm:mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div>
+            <h1 className="text-2xl md:text-3xl font-bold mb-1">{campaign.name}</h1>
+            <p className="text-xs md:text-sm text-slate-400">D20 TTRPG - Gold Distribution & Inventory</p>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={onBackToCampaigns}
+              className="bg-slate-800 hover:bg-slate-700 border border-slate-600 px-3 py-2 rounded-lg flex items-center gap-2 transition-all hover:border-cyan-500 text-slate-300 hover:text-cyan-400"
+            >
+              <ArrowLeft size={16} />
+              <span className="hidden sm:inline">Campaigns</span>
+            </button>
+            <button
+              onClick={onLogout}
+              className="bg-slate-800 hover:bg-slate-700 border border-slate-600 px-3 py-2 rounded-lg flex items-center gap-2 transition-all hover:border-red-500 text-slate-300 hover:text-red-400"
+            >
+              <LogOut size={16} />
+              <span className="hidden sm:inline">Logout</span>
+            </button>
           </div>
         </div>
 
@@ -1025,11 +1054,12 @@ const handleGoldEdit = async (entity, newValue) => {
                     </button>
                   </div>
 
-                  <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
+                  <div className="flex flex-wrap gap-2">
                     <button
                       onClick={() => handleSellItem(item)}
-                      className="flex-1 bg-cyan-600 hover:bg-cyan-700 px-3 sm:px-4 py-2 sm:py-3 rounded-lg font-medium transition-colors text-sm sm:text-base"
+                      className="bg-cyan-600 hover:bg-cyan-700 px-4 py-2 rounded-lg font-medium transition-colors text-sm flex items-center gap-2"
                     >
+                      <Coins size={16} />
                       Sell ({item.is_treasure ? item.value : Math.floor(item.value * 0.5)} gp ÷ {players.length + 1})
                     </button>
                     <button
@@ -1037,8 +1067,9 @@ const handleGoldEdit = async (entity, newValue) => {
                         setSelectedItem(item);
                         setShowAssignModal(true);
                       }}
-                      className="flex-1 bg-blue-600 hover:bg-blue-700 px-3 sm:px-4 py-2 sm:py-3 rounded-lg font-medium transition-colors text-sm sm:text-base"
+                      className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg font-medium transition-colors text-sm flex items-center gap-2"
                     >
+                      <Package size={16} />
                       Assign to Player
                     </button>
                   </div>
@@ -1103,10 +1134,38 @@ const handleGoldEdit = async (entity, newValue) => {
                               <span className="px-2 py-0.5 rounded bg-purple-600 text-xs">Consumable</span>
                             )}
                           </div>
-                          {item.notes && (
-                            <div className="text-xs text-slate-400 mt-1 italic">
-                              {item.notes}
+                          {editingItemNotes === item.id ? (
+                            <div className="mt-2 flex gap-2">
+                              <input
+                                type="text"
+                                value={editingNotes}
+                                onChange={(e) => setEditingNotes(e.target.value)}
+                                className="flex-1 bg-slate-800 border border-slate-600 rounded px-2 py-1 text-sm text-white"
+                                placeholder="Add notes..."
+                                autoFocus
+                              />
+                              <button
+                                onClick={() => handleEditNotes(item, editingNotes)}
+                                className="bg-green-600 hover:bg-green-700 px-2 py-1 rounded text-xs transition-colors"
+                              >
+                                Save
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setEditingItemNotes(null);
+                                  setEditingNotes('');
+                                }}
+                                className="bg-slate-600 hover:bg-slate-500 px-2 py-1 rounded text-xs transition-colors"
+                              >
+                                Cancel
+                              </button>
                             </div>
+                          ) : (
+                            item.notes && (
+                              <div className="text-xs text-slate-400 mt-1 italic">
+                                {item.notes}
+                              </div>
+                            )
                           )}
                         </div>
                         {item.charges !== null && (
@@ -1127,17 +1186,17 @@ const handleGoldEdit = async (entity, newValue) => {
                           </div>
                         )}
                       </div>
-                      <div className="flex gap-2">
+                      <div className="flex flex-wrap gap-2">
                         <button
                           onClick={() => {
                             setSelectedItem(item);
                             setSellingFrom(activeInventory);
                             setShowSellModal(true);
                           }}
-                          className="flex-1 bg-cyan-600 hover:bg-cyan-700 px-4 py-2 rounded text-sm transition-colors inline-flex items-center justify-center gap-2"
+                          className="bg-cyan-600 hover:bg-cyan-700 px-3 py-2 rounded text-sm transition-colors inline-flex items-center gap-2"
                         >
                           <Coins size={16} />
-                          Sell for {item.isTreasure ? item.originalValue : Math.floor(item.originalValue * 0.5)} gp
+                          Sell
                         </button>
                         <button
                           onClick={() => {
@@ -1145,10 +1204,20 @@ const handleGoldEdit = async (entity, newValue) => {
                             setTransferringFrom(activeInventory);
                             setShowTransferModal(true);
                           }}
-                          className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded text-sm transition-colors inline-flex items-center gap-2"
+                          className="bg-blue-600 hover:bg-blue-700 px-3 py-2 rounded text-sm transition-colors inline-flex items-center gap-2"
                         >
                           <ArrowRightLeft size={16} />
                           Transfer
+                        </button>
+                        <button
+                          onClick={() => {
+                            setEditingItemNotes(item.id);
+                            setEditingNotes(item.notes || '');
+                          }}
+                          className="bg-purple-600 hover:bg-purple-700 px-3 py-2 rounded text-sm transition-colors inline-flex items-center gap-2"
+                        >
+                          <Edit2 size={16} />
+                          Edit Notes
                         </button>
                       </div>
                     </div>
@@ -1164,7 +1233,7 @@ const handleGoldEdit = async (entity, newValue) => {
                     setBuyingPlayer(activeInventory);
                     setShowBuyModal(true);
                   }}
-                  className="w-full bg-green-600 hover:bg-green-700 px-4 py-3 rounded-lg flex items-center justify-center gap-2 transition-colors"
+                  className="bg-green-600 hover:bg-green-700 px-4 py-2 rounded-lg inline-flex items-center gap-2 transition-colors"
                 >
                   <ShoppingCart size={18} />
                   Buy Item for {activeInventory}
