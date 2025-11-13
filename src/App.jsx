@@ -33,6 +33,9 @@ const App = ({ user, campaign, onBackToCampaigns, onLogout }) => {
   const [editingGold, setEditingGold] = useState(null);
   const [editingItemNotes, setEditingItemNotes] = useState(null);
   const [editingNotes, setEditingNotes] = useState('');
+  const [loadingButtons, setLoadingButtons] = useState({});
+  const [logSearchTerm, setLogSearchTerm] = useState('');
+  const [inventorySortBy, setInventorySortBy] = useState('date'); // 'date', 'name', 'value'
 
   // REAL-TIME CONFIGURATION
   // Set to false to disable real-time features (kill switch)
@@ -452,15 +455,34 @@ const App = ({ user, campaign, onBackToCampaigns, onLogout }) => {
     setShowAddModal(false);
   };
 
-  const handleSellItem = async (item) => {
+  const handleSellItemFromIncoming = async (item, splitToAll = true) => {
     const sellValue = item.is_treasure ? item.value : Math.floor(item.value * 0.5);
-    await distributeGold(sellValue, `Sold ${item.name} (${item.is_treasure ? 'Treasure' : 'Loot - 50%'})`);
-    
+
+    if (splitToAll) {
+      await distributeGold(sellValue, `Sold ${item.name} (split to all)`);
+    } else {
+      // For incoming loot sold to "self", we'll add to party fund as default
+      const { data: partyData, error: partyFetchError } = await supabase
+        .from('party_fund')
+        .select('id, gold')
+        .eq('campaign_id', campaign.id)
+        .single();
+
+      if (!partyFetchError && partyData) {
+        await supabase
+          .from('party_fund')
+          .update({ gold: partyData.gold + sellValue })
+          .eq('id', partyData.id);
+        await reloadGold();
+        await addTransaction('sell', `Sold ${item.name} (Party Fund only)`, sellValue, 'Party Fund');
+      }
+    }
+
     await supabase
       .from('items')
       .update({ status: 'sold' })
       .eq('id', item.id);
-    
+
     setIncomingLoot(prev => prev.filter(i => i.id !== item.id));
     setMasterLog(prev => prev.map(i => i.id === item.id ? { ...i, status: 'sold' } : i));
   };
@@ -628,6 +650,45 @@ const App = ({ user, campaign, onBackToCampaigns, onLogout }) => {
     } catch (error) {
       console.error('Error updating notes:', error);
       alert('Error updating notes');
+    }
+  };
+
+  const handleDiscardItem = async (player, item) => {
+    if (!confirm(`Are you sure you want to discard ${item.name}? This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      await supabase
+        .from('items')
+        .update({ status: 'discarded' })
+        .eq('id', item.id);
+
+      setInventories(prev => ({
+        ...prev,
+        [player]: prev[player].filter(i => i.id !== item.id)
+      }));
+
+      setMasterLog(prev => prev.map(i => i.id === item.id ? { ...i, status: 'discarded' } : i));
+      await addTransaction('discard', `${item.name} discarded by ${player}`, 0, player);
+    } catch (error) {
+      console.error('Error discarding item:', error);
+      alert('Error discarding item');
+    }
+  };
+
+  const sortInventory = (items) => {
+    if (!items) return [];
+    const sorted = [...items];
+
+    switch (inventorySortBy) {
+      case 'name':
+        return sorted.sort((a, b) => a.name.localeCompare(b.name));
+      case 'value':
+        return sorted.sort((a, b) => b.originalValue - a.originalValue);
+      case 'date':
+      default:
+        return sorted; // Already sorted by date from database
     }
   };
 
@@ -1056,11 +1117,15 @@ const handleGoldEdit = async (entity, newValue) => {
 
                   <div className="flex flex-wrap gap-2">
                     <button
-                      onClick={() => handleSellItem(item)}
+                      onClick={() => {
+                        setSelectedItem(item);
+                        setSellingFrom('Incoming');
+                        setShowSellModal(true);
+                      }}
                       className="bg-cyan-600 hover:bg-cyan-700 px-4 py-2 rounded-lg font-medium transition-colors text-sm flex items-center gap-2"
                     >
                       <Coins size={16} />
-                      Sell ({item.is_treasure ? item.value : Math.floor(item.value * 0.5)} gp ÷ {players.length + 1})
+                      Sell ({item.is_treasure ? item.value : Math.floor(item.value * 0.5)} gp)
                     </button>
                     <button
                       onClick={() => {
@@ -1116,14 +1181,28 @@ const handleGoldEdit = async (entity, newValue) => {
             {activeInventory !== 'Consumables' && (
               <div className="bg-slate-800 rounded-lg p-6 shadow-xl border border-slate-700">
                 <div className="flex justify-between items-center mb-6">
-                  <h3 className="text-2xl font-bold">{activeInventory}</h3>
-                  <div className="text-cyan-400 font-bold text-xl">
-                    {gold[activeInventory] || gold['Party Fund']} gp
+                  <div>
+                    <h3 className="text-2xl font-bold">{activeInventory}</h3>
+                    <div className="text-cyan-400 font-bold text-xl mt-1">
+                      {gold[activeInventory] || gold['Party Fund']} gp
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <label className="text-sm text-slate-400">Sort by:</label>
+                    <select
+                      value={inventorySortBy}
+                      onChange={(e) => setInventorySortBy(e.target.value)}
+                      className="bg-slate-700 border border-slate-600 rounded px-3 py-1 text-sm text-white"
+                    >
+                      <option value="date">Date Added</option>
+                      <option value="name">Name (A-Z)</option>
+                      <option value="value">Value (High-Low)</option>
+                    </select>
                   </div>
                 </div>
 
                 <div className="space-y-3 mb-6">
-                  {inventories[activeInventory]?.map(item => (
+                  {sortInventory(inventories[activeInventory])?.map(item => (
                     <div key={item.id} className="bg-slate-700 rounded-lg p-4 border border-slate-600">
                       <div className="flex justify-between items-start mb-3">
                         <div className="flex-1">
@@ -1218,6 +1297,13 @@ const handleGoldEdit = async (entity, newValue) => {
                         >
                           <Edit2 size={16} />
                           Edit Notes
+                        </button>
+                        <button
+                          onClick={() => handleDiscardItem(activeInventory, item)}
+                          className="bg-red-600 hover:bg-red-700 px-3 py-2 rounded text-sm transition-colors inline-flex items-center gap-2"
+                        >
+                          <Trash2 size={16} />
+                          Discard
                         </button>
                       </div>
                     </div>
@@ -1355,7 +1441,16 @@ const handleGoldEdit = async (entity, newValue) => {
         {/* Master Log View */}
         {activeView === 'history' && (
           <div className="space-y-4">
-            <h2 className="text-xl sm:text-2xl font-bold">Master Item Log</h2>
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+              <h2 className="text-xl sm:text-2xl font-bold">Master Item Log</h2>
+              <input
+                type="text"
+                placeholder="Search items..."
+                value={logSearchTerm}
+                onChange={(e) => setLogSearchTerm(e.target.value)}
+                className="bg-slate-700 border border-slate-600 rounded-lg px-4 py-2 text-white text-sm w-full sm:w-64"
+              />
+            </div>
             <div className="bg-slate-800 rounded-lg overflow-hidden border border-slate-700 overflow-x-auto">
               <table className="w-full text-sm sm:text-base">
                 <thead className="bg-slate-900">
@@ -1368,7 +1463,15 @@ const handleGoldEdit = async (entity, newValue) => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-700">
-                  {masterLog.map(item => (
+                  {masterLog
+                    .filter(item =>
+                      !logSearchTerm ||
+                      item.name.toLowerCase().includes(logSearchTerm.toLowerCase()) ||
+                      item.status.toLowerCase().includes(logSearchTerm.toLowerCase()) ||
+                      (item.assigned_to && item.assigned_to.toLowerCase().includes(logSearchTerm.toLowerCase())) ||
+                      (item.notes && item.notes.toLowerCase().includes(logSearchTerm.toLowerCase()))
+                    )
+                    .map(item => (
                     <tr key={item.id} className="hover:bg-slate-750">
                       <td className="px-2 sm:px-4 py-2 sm:py-3">{item.name}</td>
                       <td className="px-2 sm:px-4 py-2 sm:py-3">
@@ -1639,7 +1742,7 @@ const handleGoldEdit = async (entity, newValue) => {
               From: <span className="text-cyan-400 font-semibold">{sellingFrom}</span>
               <br />
               Sell Value: <span className="text-green-400 font-bold">
-                {selectedItem.isTreasure ? selectedItem.originalValue : Math.floor(selectedItem.originalValue * 0.5)} gp
+                {sellingFrom === 'Incoming' ? (selectedItem.is_treasure ? selectedItem.value : Math.floor(selectedItem.value * 0.5)) : (selectedItem.isTreasure ? selectedItem.originalValue : Math.floor(selectedItem.originalValue * 0.5))} gp
               </span>
             </div>
             <div className="mb-4 text-sm text-slate-400">
@@ -1648,31 +1751,39 @@ const handleGoldEdit = async (entity, newValue) => {
             <div className="space-y-2">
               <button
                 onClick={async () => {
-                  await handleSellFromInventory(sellingFrom, selectedItem, true);
+                  if (sellingFrom === 'Incoming') {
+                    await handleSellItemFromIncoming(selectedItem, true);
+                  } else {
+                    await handleSellFromInventory(sellingFrom, selectedItem, true);
+                  }
                   setShowSellModal(false);
                   setSelectedItem(null);
                   setSellingFrom(null);
                 }}
                 className="w-full bg-cyan-600 hover:bg-cyan-700 px-4 py-3 rounded transition-colors text-left"
               >
-                <div className="font-semibold">Sell for {selectedItem.isTreasure ? selectedItem.originalValue : Math.floor(selectedItem.originalValue * 0.5)} gp (Split to All)</div>
+                <div className="font-semibold">Sell (Split to All)</div>
                 <div className="text-sm text-cyan-100">
                   Each player {partyFundGetsShare ? 'and party fund' : ''} gets{' '}
-                  {Math.floor((selectedItem.isTreasure ? selectedItem.originalValue : Math.floor(selectedItem.originalValue * 0.5)) / (partyFundGetsShare ? players.length + 1 : players.length))} gp
+                  {Math.floor((sellingFrom === 'Incoming' ? (selectedItem.is_treasure ? selectedItem.value : Math.floor(selectedItem.value * 0.5)) : (selectedItem.isTreasure ? selectedItem.originalValue : Math.floor(selectedItem.originalValue * 0.5))) / (partyFundGetsShare ? players.length + 1 : players.length))} gp
                 </div>
               </button>
               <button
                 onClick={async () => {
-                  await handleSellFromInventory(sellingFrom, selectedItem, false);
+                  if (sellingFrom === 'Incoming') {
+                    await handleSellItemFromIncoming(selectedItem, false);
+                  } else {
+                    await handleSellFromInventory(sellingFrom, selectedItem, false);
+                  }
                   setShowSellModal(false);
                   setSelectedItem(null);
                   setSellingFrom(null);
                 }}
                 className="w-full bg-blue-600 hover:bg-blue-700 px-4 py-3 rounded transition-colors text-left"
               >
-                <div className="font-semibold">Sell for {selectedItem.isTreasure ? selectedItem.originalValue : Math.floor(selectedItem.originalValue * 0.5)} gp ({sellingFrom} Only)</div>
+                <div className="font-semibold">Sell ({sellingFrom === 'Incoming' ? 'Party Fund' : sellingFrom} Only)</div>
                 <div className="text-sm text-blue-100">
-                  {sellingFrom} keeps all {selectedItem.isTreasure ? selectedItem.originalValue : Math.floor(selectedItem.originalValue * 0.5)} gp
+                  {sellingFrom === 'Incoming' ? 'Party Fund' : sellingFrom} keeps all {sellingFrom === 'Incoming' ? (selectedItem.is_treasure ? selectedItem.value : Math.floor(selectedItem.value * 0.5)) : (selectedItem.isTreasure ? selectedItem.originalValue : Math.floor(selectedItem.originalValue * 0.5))} gp
                 </div>
               </button>
             </div>
