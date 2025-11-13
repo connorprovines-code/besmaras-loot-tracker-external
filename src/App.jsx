@@ -880,7 +880,7 @@ const handleGoldEdit = async (entity, newValue) => {
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-900 flex items-center justify-center">
-        <div className="text-white text-2xl">Loading {campaign.name}...</div>
+        <div className="text-white text-2xl select-none cursor-wait pointer-events-none">Loading {campaign.name}...</div>
       </div>
     );
   }
