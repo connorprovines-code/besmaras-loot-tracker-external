@@ -194,6 +194,20 @@ const Auth = ({ onAuthSuccess }) => {
                 'Login'
               )}
             </button>
+
+            {isSignUp && (
+              <div className="mt-3 text-center text-xs text-slate-400">
+                By signing up, you agree to our{' '}
+                <a
+                  href="https://www.d20-loot-tracker.com/privacy"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-cyan-400 hover:text-cyan-300 underline"
+                >
+                  Privacy Policy
+                </a>
+              </div>
+            )}
           </form>
 
           {!isSignUp && (
@@ -219,6 +233,16 @@ const Auth = ({ onAuthSuccess }) => {
 
         <div className="mt-6 text-center text-sm text-slate-400">
           <p>Manage your D&D, Pathfinder, or any D20 campaign with real-time collaboration</p>
+          <div className="mt-2">
+            <a
+              href="https://www.d20-loot-tracker.com/privacy"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-slate-500 hover:text-cyan-400 transition-colors text-xs"
+            >
+              Privacy Policy
+            </a>
+          </div>
         </div>
       </div>
     </div>
